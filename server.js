@@ -38,43 +38,51 @@ app.post("/verify", (req, res) => {
 })
 
 app.get("/tests", (req, res) => {
-    try {
-        const { limit } = req.query
-        let tests_arr = [];
-        while (tests_arr.length < limit) {
-            const test= tests[Math.floor(Math.random() * tests.length)]
-            const exists = tests_arr.filter(t=> t.id == test.id) > 0
-            if(!exists){
-                tests_arr.push(test)
-            }
-        }
-        res.send(tests_arr)
-    } catch (error) {
-        console.log("Error in /tests: ", error);
-        res.status(500).send("Error:", error);
+  try {
+    const { limit } = req.query;
+    let tests_arr = [];
+
+    while (tests_arr.length < limit && tests_arr.length < tests.length) {
+      const test = tests[Math.floor(Math.random() * tests.length)];
+      const exists = tests_arr.some(t => t.id === test.id); // ✅ to‘g‘rilandi
+      if (!exists) {
+        tests_arr.push(test);
+      }
     }
-})
+
+    res.send(tests_arr);
+  } catch (error) {
+    console.log("Error in /tests:", error);
+    res.status(500).send({ error: "Server error" });
+  }
+});
+
 
 app.post("/submit", upload.single("file"), async (req, res) => {
   const filePath = req.file.path;
+  const originalName = req.file.originalname || "test.pdf"; // ← bu satr qo‘shildi
+  const newPath = `uploads/${originalName}`; // ← yangi fayl nomi
   const BOT_TOKEN = process.env.BOT_TOKEN;
   const CHANNEL_ID = process.env.CHANNEL_ID;
 
   try {
+    // vaqtinchalik faylni original nom bilan qayta nomlash
+    await fs.promises.rename(filePath, newPath);
+
     const url = `https://api.telegram.org/bot${BOT_TOKEN}/sendDocument`;
 
     const FormData = require("form-data");
     const form = new FormData();
     form.append("chat_id", CHANNEL_ID);
-    form.append("document", fs.createReadStream(filePath));
+    form.append("document", fs.createReadStream(newPath)); // ← endi newPath
     form.append("caption", "📄 Yangi PDF fayl yuklandi!");
 
     const response = await axios.post(url, form, {
       headers: form.getHeaders(),
     });
 
-    // ✅ Telegramga muvaffaqiyatli yuborilgandan keyin faylni o‘chir
-    await fs.promises.unlink(filePath);
+    // ✅ Telegramga yuborilgandan keyin faylni o‘chir
+    await fs.promises.unlink(newPath);
 
     res.status(200).json({
       message: "Fayl yuborildi va uploads dan o‘chirildi ✅",
@@ -85,7 +93,7 @@ app.post("/submit", upload.single("file"), async (req, res) => {
     
     // ❗ Xatolik bo‘lsa ham faylni o‘chir
     try {
-      await fs.promises.unlink(filePath);
+      await fs.promises.unlink(newPath);
     } catch (e) {
       console.warn("Faylni o‘chirishda muammo:", e.message);
     }
@@ -93,5 +101,6 @@ app.post("/submit", upload.single("file"), async (req, res) => {
     res.status(500).json({ error: "Fayl yuborishda xatolik yuz berdi ❌" });
   }
 });
+
 
 app.listen(process.env.PORT || 4000, () => { console.log(`Server is live on: http://localhost:${process.env.PORT || 4000}`) })
